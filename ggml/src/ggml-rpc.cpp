@@ -2,6 +2,21 @@
 #include "ggml.h"
 #include "ggml-backend-impl.h"
 
+#include <time.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+double get_time(void)
+{
+  struct rusage r;
+  double sec, usec, z;
+  getrusage(RUSAGE_SELF, &r);
+  sec   = r.ru_utime.tv_sec;
+  usec  = r.ru_utime.tv_usec;
+  z = sec + usec*1.0e-6;
+  return (z);
+}
+
 #include <cinttypes>
 #include <string>
 #include <vector>
@@ -1057,10 +1072,36 @@ rpc_server::~rpc_server() {
     }
 }
 
+struct timers {
+  double alloc_buffer;
+  double get_alignment;
+  double get_max_size;
+  double buffer_get_base;
+  double free_buffer;
+  double buffer_clear;
+  double set_tensor;
+  double get_tensor;
+  double copy_tensor;
+  double graph_compute;
+  double get_device_memory;
+  double total;
+};
+
+void display_timers(timers t) {
+  fprintf(stdout, "TIMERS: %e, %e, %e, %e, %e, %e, %e\n", t.total, t.buffer_clear, t.set_tensor, t.get_tensor, t.copy_tensor, t.graph_compute, t.get_device_memory);
+  return;
+}
+
 static void rpc_serve_client(ggml_backend_t backend, sockfd_t sockfd, size_t free_mem, size_t total_mem) {
     rpc_server server(backend);
+	
+	struct timers t_stat = {0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.};
+
     while (true) {
         uint8_t cmd;
+		double tw0 = get_time();
+		double tt = 0.0;
+
         if (!recv_data(sockfd, &cmd, 1)) {
             break;
         }
@@ -1077,50 +1118,72 @@ static void rpc_serve_client(ggml_backend_t backend, sockfd_t sockfd, size_t fre
         bool ok = true;
         switch (cmd) {
             case ALLOC_BUFFER: {
+                tt = get_time();
                 ok = server.alloc_buffer(input, output);
+                t_stat.alloc_buffer += get_time() - tt;
                 break;
             }
             case GET_ALIGNMENT: {
+                tt = get_time();
                 server.get_alignment(output);
+                t_stat.get_alignment += get_time() - tt;
                 break;
             }
             case GET_MAX_SIZE: {
+                tt = get_time();
                 server.get_max_size(output);
+                t_stat.get_max_size += get_time() - tt;
                 break;
             }
             case BUFFER_GET_BASE: {
+                tt = get_time();
                 ok = server.buffer_get_base(input, output);
+                t_stat.buffer_get_base += get_time() - tt;
                 break;
             }
             case FREE_BUFFER: {
+                tt = get_time();
                 ok = server.free_buffer(input);
+                t_stat.free_buffer += get_time() - tt;
                 break;
             }
             case BUFFER_CLEAR: {
+                tt = get_time();
                 ok = server.buffer_clear(input);
+                t_stat.buffer_clear += get_time() - tt;
                 break;
             }
             case SET_TENSOR: {
+                tt = get_time();
                 ok = server.set_tensor(input);
+                t_stat.set_tensor += get_time() - tt;
                 break;
             }
             case GET_TENSOR: {
+                tt = get_time();
                 ok = server.get_tensor(input, output);
+                t_stat.get_tensor += get_time() - tt;
                 break;
             }
             case COPY_TENSOR: {
+                tt = get_time();
                 ok = server.copy_tensor(input, output);
+                t_stat.copy_tensor += get_time() - tt;
                 break;
             }
             case GRAPH_COMPUTE: {
+                tt = get_time();
                 ok = server.graph_compute(input, output);
+                t_stat.graph_compute += get_time() - tt;
                 break;
             }
             case GET_DEVICE_MEMORY: {
+                tt = get_time();
                 // output serialization format: | free (8 bytes) | total (8 bytes) |
                 output.resize(2*sizeof(uint64_t), 0);
                 memcpy(output.data(), &free_mem, sizeof(free_mem));
                 memcpy(output.data() + sizeof(uint64_t), &total_mem, sizeof(total_mem));
+                t_stat.get_device_memory += get_time() - tt;
                 break;
             }
             default: {
@@ -1138,6 +1201,8 @@ static void rpc_serve_client(ggml_backend_t backend, sockfd_t sockfd, size_t fre
         if (!send_data(sockfd, output.data(), output_size)) {
             break;
         }
+        t_stat.total += get_time() - tw0;
+		display_timers(t_stat);
     }
 }
 
