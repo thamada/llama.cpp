@@ -1087,6 +1087,21 @@ struct timers {
   double total;
 };
 
+void reset_timers(timers *t) {
+  t->alloc_buffer = 0.0;
+  t->get_alignment = 0.0;
+  t->get_max_size = 0.0;
+  t->buffer_get_base = 0.0;
+  t->free_buffer = 0.0;
+  t->buffer_clear = 0.0;
+  t->set_tensor = 0.0;
+  t->get_tensor = 0.0;
+  t->copy_tensor = 0.0;
+  t->graph_compute = 0.0;
+  t->get_device_memory = 0.0;
+  t->total = 0.0;
+};
+
 void display_timers(timers t) {
   fprintf(stdout, "TIMERS: %e, %e, %e, %e, %e, %e, %e\n", t.total, t.buffer_clear, t.set_tensor, t.get_tensor, t.copy_tensor, t.graph_compute, t.get_device_memory);
   return;
@@ -1095,12 +1110,14 @@ void display_timers(timers t) {
 static void rpc_serve_client(ggml_backend_t backend, sockfd_t sockfd, size_t free_mem, size_t total_mem) {
     rpc_server server(backend);
 	
-	struct timers t_stat = {0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.};
+	struct timers t_stat;
+	reset_timers(&t_stat);
 
     while (true) {
         uint8_t cmd;
 		double tw0 = get_time();
 		double tt = 0.0;
+		reset_timers(&t_stat);
 
         if (!recv_data(sockfd, &cmd, 1)) {
             break;
